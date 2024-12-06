@@ -11,7 +11,9 @@ dataset_path = "/Users/aanya/Documents/GitHub/comp-apps-HW/Final/eeg_dataset/"
 all_epochs = []
 all_labels = []
 
-for sub_num in range(12, 13):  # Loop through subjects 2-12
+for sub_num in range(2, 13):  # Loop through subjects 2-12
+   if sub_num == 8:  # Skip subject 8 due to an issue
+       continue
     # Format subject number with leading zero (01, 02, etc.)
     sub = f"sub-{sub_num:02d}"
     
