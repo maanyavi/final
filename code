@@ -1,73 +1,84 @@
 # Import necessary libraries
 import numpy as np
 import mne
+import os
 from sklearn.svm import SVC
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, accuracy_score
 
+
 # Load EEG datasets for multiple subjects
-dataset_path = "/Users/aanya/Documents/GitHub/comp-apps-HW/Final/eeg_dataset/"
+dataset_path = os.path.dirname(os.path.abspath(__file__))  # Adjust path to where your EEG files are
+print(dataset_path)
 all_epochs = []
 all_labels = []
 
-for sub_num in range(2, 13):  # Loop through subjects 2-12
-   if sub_num == 8:  # Skip subject 8 due to an issue
+
+for sub_num in range(2, 3):  # Loop through subjects 2-12
+   if sub_num == 8:  # Skip subject 8
        continue
-    # Format subject number with leading zero (01, 02, etc.)
-    sub = f"sub-{sub_num:02d}"
-    
-    # Construct file path for each subject
-    file_path = dataset_path + f"{sub}_task-emotion_eeg.edf"
-    
-    try:
-        # Load and preprocess data for each subject
-        raw = mne.io.read_raw_edf(file_path, preload=True)
-        raw.filter(1., 40.)
-        
-        # Get events and epochs for each subject
-        events, event_id = mne.events_from_annotations(raw)
-        epochs = mne.Epochs(raw, events, event_id=event_id, tmin=-0.2, tmax=0.5, 
-                          baseline=(None, 0), preload=True, event_repeated='drop')
-        
-        all_epochs.append(epochs)
-        all_labels.extend(epochs.events[:, -1])
-        
-    except FileNotFoundError:
-        print(f"Warning: File not found for {sub}")
-        continue
+   sub = f"sub-{sub_num:02d}"
+  
+   file_path = os.path.join(dataset_path, f"{sub}_task-emotion_eeg.edf")
+   print(f"Looking for file at: {file_path}")  # Debug print to see the attempted path
+  
+   try:
+       raw = mne.io.read_raw_edf(file_path, preload=True)
+       raw.filter(1., 40.)
+      
+       # Get events and epochs for each subject
+       events, event_id = mne.events_from_annotations(raw)
+       epochs = mne.Epochs(raw, events, event_id=event_id, tmin=-0.2, tmax=0.5,
+                         baseline=(None, 0), preload=True, event_repeated='drop')
+      
+       all_epochs.append(epochs)
+       all_labels.extend(epochs.events[:, -1])
+      
+   except FileNotFoundError:
+       print(f"Warning: File not found for {sub}")
+       continue
+
 
 # Combine all epochs
 epochs = mne.concatenate_epochs(all_epochs) if all_epochs else None
 
+
 if epochs is None:
-    raise ValueError("No valid data was loaded")
+   raise ValueError("No valid data was loaded")
+
 
 # Extract features: Mean band power in alpha and beta bands
 freq_bands = {'alpha': (8, 12), 'beta': (12, 30)}
 features = []
 for band, (fmin, fmax) in freq_bands.items():
-    psds = epochs.compute_psd(method='welch', fmin=fmin, fmax=fmax)
-    psd = psds.get_data()  # Get just the PSD data
-    features.append(psd.mean(axis=2))  # Average power across frequencies
+   psds = epochs.compute_psd(method='welch', fmin=fmin, fmax=fmax)
+   psd = psds.get_data()  # Get just the PSD data
+   features.append(psd.mean(axis=2))  # Average power across frequencies
+
 
 # Combine features and flatten
 X = np.concatenate(features, axis=1)
 
+
 # Labels: Use the event IDs as targets
 y = all_labels
 
+
 # Train/Test split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
 
 # Standardize features
 scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
 X_test = scaler.transform(X_test)
 
+
 # Train SVM model
 model = SVC(kernel='linear', C=1)
 model.fit(X_train, y_train)
+
 
 # Evaluate model
 y_pred = model.predict(X_test)
