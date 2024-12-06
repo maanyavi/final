@@ -11,4 +11,7 @@ Our project's code is based on a public GitHub repository on Python Data Science
 
 **Instructions**
 1. To use our dataset, download the Group_2 dataset zip file and the code file.
-2. Unzip the dataset file and ensure the data and the file can be found in your current directory. 
+2. Unzip the dataset file and ensure the data and the file can be found in the same directory.
+3. _(Optional step)_ If your data is found in a subfolder within the directory you can edit line 21 (file_path = os.path.join(dataset_path, f"{sub}_task-emotion_eeg.edf")) and add your subfolder like this: file_path = os.path.join(dataset_path, "subfolder_name", f"{sub}_task-emotion_eeg.edf")
+4. Run the code.
+
