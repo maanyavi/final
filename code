@@ -7,81 +7,86 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, accuracy_score
 
-
-# Load EEG datasets for multiple subjects
-dataset_path = os.path.dirname(os.path.abspath(__file__))  # Adjust path to where your EEG files are
+# Define the path to the dataset
+dataset_path = os.path.dirname(os.path.abspath(__file__))  # Get the directory where this script is located minus the file name of the code
 print(dataset_path)
-all_epochs = []
-all_labels = []
 
+# Initialize lists to store epochs and labels from all subjects
+all_epochs = []  # Will hold epochs (time-locked EEG segments) for all subjects
+all_labels = []  # Corresponding labels (event IDs) for each epoch
 
-for sub_num in range(2, 3):  # Loop through subjects 2-12
-   if sub_num == 8:  # Skip subject 8
-       continue
-   sub = f"sub-{sub_num:02d}"
-  
-   file_path = os.path.join(dataset_path, f"{sub}_task-emotion_eeg.edf")
-   print(f"Looking for file at: {file_path}")  # Debug print to see the attempted path
-  
-   try:
-       raw = mne.io.read_raw_edf(file_path, preload=True)
-       raw.filter(1., 40.)
-      
-       # Get events and epochs for each subject
-       events, event_id = mne.events_from_annotations(raw)
-       epochs = mne.Epochs(raw, events, event_id=event_id, tmin=-0.2, tmax=0.5,
-                         baseline=(None, 0), preload=True, event_repeated='drop')
-      
-       all_epochs.append(epochs)
-       all_labels.extend(epochs.events[:, -1])
-      
-   except FileNotFoundError:
-       print(f"Warning: File not found for {sub}")
-       continue
+# Loop through subjects (IDs 2 to 12, skipping subject 8)
+for sub_num in range(2, 13):  # Iterate through subject IDs 2-12
+    if sub_num == 8:  # Skip subject 8 due to missing/problematic data
+        continue
+    sub = f"sub-{sub_num:02d}"  # Format subject number with leading zeros (e.g., sub-02) as found in the original dataset
 
+    # Construct the path to the EDF file for the current subject
+    file_path = os.path.join(dataset_path, f"{sub}_task-emotion_eeg.edf")
+    print(f"Looking for file at: {file_path}")  # Debugging message to verify file paths
 
-# Combine all epochs
+    try:
+        # Load the EEG data for the subject
+        raw = mne.io.read_raw_edf(file_path, preload=True)  # Load the EDF file into an MNE Raw object
+        raw.filter(1., 40.)  # Apply a bandpass filter to keep frequencies between 1 and 40 Hz (denoising)
+
+        # Extract events and event IDs from annotations in the EDF file
+        events, event_id = mne.events_from_annotations(raw)
+        
+        # Create epochs (time-locked EEG data segments) for specific events
+        epochs = mne.Epochs(raw, events, event_id=event_id, tmin=-0.2, tmax=0.5,
+                            baseline=(None, 0), preload=True, event_repeated='drop')
+        
+        # Store epochs and their corresponding labels (event IDs)
+        all_epochs.append(epochs)
+        all_labels.extend(epochs.events[:, -1])  # Append the last column of the events array (event IDs)
+
+    except FileNotFoundError:
+        # Skip the subject if the file is not found
+        print(f"Warning: File not found for {sub}")
+        continue
+
+# Combine all epochs into a single MNE Epochs object
+# This step merges the epochs from all subjects into one dataset for processing
 epochs = mne.concatenate_epochs(all_epochs) if all_epochs else None
 
-
+# Ensure that valid data was loaded
 if epochs is None:
-   raise ValueError("No valid data was loaded")
+    raise ValueError("No valid data was loaded")
 
-
-# Extract features: Mean band power in alpha and beta bands
-freq_bands = {'alpha': (8, 12), 'beta': (12, 30)}
-features = []
+# Feature Extraction: Compute mean power for specific frequency bands (alpha and beta)
+freq_bands = {'alpha': (8, 12), 'beta': (12, 30)}  # Define the frequency bands of interest
+features = []  # List to store features for each band
 for band, (fmin, fmax) in freq_bands.items():
-   psds = epochs.compute_psd(method='welch', fmin=fmin, fmax=fmax)
-   psd = psds.get_data()  # Get just the PSD data
-   features.append(psd.mean(axis=2))  # Average power across frequencies
+    # Compute Power Spectral Density (PSD) for the specified frequency band using Welch's method
+    psds = epochs.compute_psd(method='welch', fmin=fmin, fmax=fmax)
+    psd = psds.get_data()  # Extract the PSD values as a NumPy array
+    features.append(psd.mean(axis=2))  # Compute mean power across frequencies for each epoch
 
+# Combine features from all bands into a single feature matrix
+X = np.concatenate(features, axis=1)  # Flatten features so each epoch is a single row in X
 
-# Combine features and flatten
-X = np.concatenate(features, axis=1)
-
-
-# Labels: Use the event IDs as targets
+# Labels: Use the event IDs (from all_labels) as the target variable for classification
 y = all_labels
 
-
-# Train/Test split
+# Split the dataset into training and test sets for model evaluation
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-
-# Standardize features
+# Preprocess Features: Standardize (z-score normalize) the feature values
+# Standardization ensures that all features have a mean of 0 and standard deviation of 1
 scaler = StandardScaler()
-X_train = scaler.fit_transform(X_train)
-X_test = scaler.transform(X_test)
+X_train = scaler.fit_transform(X_train)  # Fit the scaler on the training data and transform it
+X_test = scaler.transform(X_test)  # Apply the same transformation to the test data
 
+# Train the SVM model
+# Here we use a linear kernel SVM with regularization parameter C=1
+model = SVC(kernel='linear', C=1)  # SVM is chosen for its ability to handle high-dimensional data
+model.fit(X_train, y_train)  # Train the SVM model on the training data
 
-# Train SVM model
-model = SVC(kernel='linear', C=1)
-model.fit(X_train, y_train)
-
-
-# Evaluate model
-y_pred = model.predict(X_test)
+# Evaluate the SVM model on the test set
+y_pred = model.predict(X_test)  # Predict labels for the test set
 print("Classification Report:")
-print(classification_report(y_test, y_pred))
-print("Accuracy:", accuracy_score(y_test, y_pred))
+print(classification_report(y_test, y_pred))  # Print precision, recall, F1-score for each class
+print("Accuracy:", accuracy_score(y_test, y_pred))  # Print overall accuracy of the model
+
+
